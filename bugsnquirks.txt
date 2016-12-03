@@ -1,0 +1,83 @@
+EhBASIC 2.22 has a view bugs and quirks that you should know about.
+
+1. The interrupt system is severely broken.
+
+When an IRQ occurs and IRQ_vec is called in min_mon.asm the interrupt is only
+registered with IRQbase but the interrupt source is not serviced nor is the
+interrupt disable bit set at RTI. As a consequence the interrupt is immediately
+called again and again and IRQbase is trashed until the interrupt is serviced
+by the ON IRQ handler in basic.
+
+The problem is discussed in http://forum.6502.org/viewtopic.php?f=5&t=2411
+How I solved the problem for my emulator:
+https://github.com/Klaus2m5/AVR_emulated_6502_4SBC/tree/master/EhBASIC
+
+However, you should keep in mind that the interrupt service capacity in EhBASIC
+is very limited. In a 2MHz system more than 100 interrupts per second or
+interrupts requiring less than 10ms service time should be handled in machine
+language. The numbers are worse if the interrupt handler gets more complex.
+
+2. String handling when the string is in the input buffer.
+
+When a string is entered via the input buffer (Ibuffs - Ibuffe) in Ehbasic it
+is transient because it gets overwritten by the next input. In this case it
+needs to be copied to the string area. In all other cases the string remains in
+place and only a pointer needs to be set to the strings location. 
+
+There is a bug in EhBASIC to determine where the string is.
+
+LAB_20DC
+	STX	Sendh			; save string end high byte
+	LDA	ssptr_h		; get string start high byte
+	CMP	#>Ram_base		; compare with start of program memory
+	BCS	LAB_RTST		; branch if not in utility area
+
+This does not work, if RAM_base is below the input buffer or EhBASIC itself is
+below RAM_base. The fix requires the input buffer not to cross a page boundary:
+
+LAB_20DC
+      STX   Sendh             ; save string end high byte
+      LDA   ssptr_h           ; get string start high byte
+; *** begin RAM above code / Ibuff above EhBASIC Patch ***
+; *** replace
+;      CMP   #>Ram_base        ; compare with start of program memory
+;      BCS   LAB_RTST          ; branch if not in utility area
+; *** with
+      CMP   #>Ibuffs          ; compare with location of input buffer page
+      BNE   LAB_RTST          ; branch if not in utility area
+; *** end   RAM above code / Ibuff above EhBASIC Patch ***
+
+3. Output of some functions limited to integers is negative.
+
+This is not a bug but documented behavior. However it is inconsistent with how
+EhBASIC uses addresses in PEEK(), POKE, DEEK() & DOKE. They all expect an
+unsigned 16 bit integer as the address. However SADD() & VARPTR() return
+addresses as signed integers and addresses above $7fff will become negative.
+The same is true for data from a FRE() & DEEK() function.
+
+If you want to use PEEK(SADD()) with large RAM you must write:
+
+? PEEK(SADD(a$)-(SADD(a$)<0)*$10000)
+
+If you want to use FRE() with large RAM you must write:
+
+? FRE(0)-(FRE(0)<0)*$10000
+
+If you really want to deviate from the beaten path, you can add a routine to
+convert unsigned integers and jump to it from the functions that you want to
+respond with an unsigned number. It replaces LAB_AYFC for these functions.
+
+; save and convert unsigned integer AY to FAC1
+LAB_UAYFC
+      LSR   Dtypef            ; clear data type flag, $FF=string, $00=numeric
+      STA   FAC1_1            ; save FAC1 mantissa1
+      STY   FAC1_2            ; save FAC1 mantissa2
+      LDX   #$90              ; set exponent=2^16 (integer)
+      SEC                     ; always positive
+      JMP   LAB_STFA          ; set exp=X, clear FAC1_3, normalise and return
+      
+You cannot apply this routine to operators which also use LAB_AYFC (=, OR, AND
+EOR <<, >>) as they require signed integers. The value -1 is asigned to a
+comparison evaluating as TRUE. Therefore logical operators must be able to
+evaluate -1 correctly.
+

@@ -49,15 +49,9 @@ LAB_20DC
 
 3. Output of some functions limited to integers is negative.
 
-This is not a bug but documented behavior. However it is inconsistent with how
-EhBASIC uses addresses in PEEK(), POKE, DEEK() & DOKE. They all expect an
-unsigned 16 bit integer as the address. However SADD() & VARPTR() return
-addresses as signed integers and addresses above $7fff will become negative.
-The same is true for data from a FRE() & DEEK() function.
+This is not a bug but documented behavior.
 
-If you want to use PEEK(SADD()) with large RAM you must write:
-
-? PEEK(SADD(a$)-(SADD(a$)<0)*$10000)
+Affected functions FRE(), SADD(), VARPTR(), DEEK()
 
 If you want to use FRE() with large RAM you must write:
 

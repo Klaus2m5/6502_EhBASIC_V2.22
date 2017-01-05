@@ -17,35 +17,36 @@ is very limited. In a 2MHz system more than 100 interrupts per second or
 interrupts requiring less than 10ms service time should be handled in machine
 language. The numbers are worse if the interrupt handler gets more complex.
 
+
 2. String handling when the string is in the input buffer.
 
 When a string is entered via the input buffer (Ibuffs - Ibuffe) in Ehbasic it
 is transient because it gets overwritten by the next input. In this case it
 needs to be copied to the string area. In all other cases the string remains in
-place and only a pointer needs to be set to the strings location. 
+place and only a pointer needs to be set to the string location. 
 
 There is a bug in EhBASIC to determine where the string is.
 
 LAB_20DC
-	STX	Sendh			; save string end high byte
-	LDA	ssptr_h		; get string start high byte
-	CMP	#>Ram_base		; compare with start of program memory
-	BCS	LAB_RTST		; branch if not in utility area
-
+      STX   Sendh             ; save string end high byte
+      LDA   ssptr_h           ; get string start high byte
+      CMP   #>Ram_base        ; compare with start of program memory
+      BCS   LAB_RTST          ; branch if not in utility area
 This does not work, if RAM_base is below the input buffer or EhBASIC itself is
 below RAM_base. The fix requires the input buffer not to cross a page boundary:
 
 LAB_20DC
       STX   Sendh             ; save string end high byte
       LDA   ssptr_h           ; get string start high byte
-; *** begin RAM above code / Ibuff above EhBASIC Patch ***
+; *** begin RAM above code / Ibuff above EhBASIC patch ***
 ; *** replace
 ;      CMP   #>Ram_base        ; compare with start of program memory
 ;      BCS   LAB_RTST          ; branch if not in utility area
 ; *** with
       CMP   #>Ibuffs          ; compare with location of input buffer page
       BNE   LAB_RTST          ; branch if not in utility area
-; *** end   RAM above code / Ibuff above EhBASIC Patch ***
+; *** end   RAM above code / Ibuff above EhBASIC patch ***
+
 
 3. Output of some functions limited to integers is negative.
 
@@ -75,3 +76,55 @@ EOR <<, >>) as they require signed integers. The value -1 is asigned to a
 comparison evaluating as TRUE. Therefore logical operators must be able to
 evaluate -1 correctly.
 
+
+4. Use of decimal mode and invalid BCD
+
+There is only one place in EhBASIC where decimal mode is used. HEX$() uses
+invalid BCD to convert a number to a hexadecimal string. Some processors do not
+support decimal mode and emulators most of the time will not support invalid
+BCD (nibbles in the range of $A - $F). 
+
+LAB_AL2X
+      CMP   #$0A              ; set carry for +1 if >9
+      ADC   #'0'              ; add ASCII "0"
+      STA   (str_pl),Y        ; save to temp string
+      DEY                     ; decrement counter
+      RTS
+
+A patch is available to disable use of decimal mode in EhBASIC.
+
+LAB_AL2X
+      CMP   #$0A              ; set carry for +1 if >9
+; *** begin disable decimal mode patch ***
+; *** insert
+      BCC   LAB_AL20          ; skip adjust if <= 9
+      ADC   #$06              ; adjust for A to F
+LAB_AL20
+; *** end   disable decimal mode patch ***
+      ADC   #'0'              ; add ASCII "0"
+      STA   (str_pl),Y        ; save to temp string
+      DEY                     ; decrement counter
+      RTS
+      
+At the same time you must disable SED & CLD at the HEX$() function.
+
+LAB_HEXS
+      CPX   #$07              ; max + 1
+      BCS   BinFErr           ; exit if too big ( > or = )
+
+      STX   TempB             ; save # of characters
+
+      LDA   #$06              ; need 6 bytes for string
+      JSR   LAB_MSSP          ; make string space A bytes long
+      LDY   #$05              ; set string index
+
+; *** disable decimal mode patch - comment next line ***
+;      SED                     ; need decimal mode for nibble convert
+      LDA   nums_3            ; get lowest byte
+      JSR   LAB_A2HX          ; convert A to ASCII hex byte and output
+      LDA   nums_2            ; get middle byte
+      JSR   LAB_A2HX          ; convert A to ASCII hex byte and output
+      LDA   nums_1            ; get highest byte
+      JSR   LAB_A2HX          ; convert A to ASCII hex byte and output
+; *** disable decimal mode patch - comment next line ***
+;      CLD                     ; back to binary

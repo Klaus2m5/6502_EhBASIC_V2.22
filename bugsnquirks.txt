@@ -1,4 +1,4 @@
-EhBASIC 2.22 has a view bugs and quirks that you should know about.
+EhBASIC 2.22 has a few bugs and quirks that you should know about.
 
 1. The interrupt system is severely broken.
 

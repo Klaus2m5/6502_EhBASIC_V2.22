@@ -17,6 +17,10 @@ is very limited. In a 2MHz system more than 100 interrupts per second or
 interrupts requiring less than 10ms service time should be handled in machine
 language. The numbers are worse if the interrupt handler gets more complex.
 
+Of course, a hybrid solution is always possible. You could service the interrupt
+in machine language and flag an interrupt to basic only after a buffer is
+filled/emptied or a count is reached.
+
 
 2. String handling when the string is in the input buffer.
 
@@ -128,3 +132,46 @@ LAB_HEXS
       JSR   LAB_A2HX          ; convert A to ASCII hex byte and output
 ; *** disable decimal mode patch - comment next line ***
 ;      CLD                     ; back to binary
+
+
+5. Ibuffs located at $xx00
+
+If the input buffer is located at the beginning of a page then any direct
+statement (RUN, LIST, ...) is read from Ibuffs-$100 resulting in unexpected
+behavior of EhBASIC.
+
+A patch is available from Daryl Rictor. I took the freedom to add conditional
+assembly.
+
+LAB_142A
+      INY                     ; increment pointer
+      INY                     ; increment pointer (makes it next line pointer high byte)
+      STA   Ibuffs,Y          ; save [EOL] (marks [EOT] in immediate mode)
+      INY                     ; adjust for line copy
+      INY                     ; adjust for line copy
+      INY                     ; adjust for line copy
+; *** begin patch for when Ibuffs is $xx00 - Daryl Rictor ***
+; *** insert
+      .IF   Ibuffs&$FF==0
+      LDA   Bpntrl            ; test for $00
+      BNE   LAB_142P          ; not $00
+      DEC   Bpntrh            ; allow for increment when $xx00
+LAB_142P
+      .ENDIF
+; *** end   patch for when Ibuffs is $xx00 - Daryl Rictor ***
+; end of patch
+      DEC   Bpntrl            ; allow for increment
+      RTS
+
+The conditional in the patch abover requires Ibuffs to be known at path 1 during
+assembly. The standard definition of Ibuffs does not satisfy this requirement.
+We need to replace it like below:
+
+; Ibuffs can now be anywhere in RAM, ensure that the max length is < $80,
+; the input buffer must not cross a page boundary and must not overlap with
+; program RAM pages!
+
+;Ibuffs            = IRQ_vec+$14
+Ibuffs            = VEC_SV+$16
+                              ; start of input buffer after IRQ/NMI code
+Ibuffe            = Ibuffs+$47; end of input buffer

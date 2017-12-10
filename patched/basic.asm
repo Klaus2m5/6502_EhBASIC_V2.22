@@ -1,5 +1,5 @@
 
-; Enhanced BASIC to assemble under 6502 simulator, $ver 2.22p
+; Enhanced BASIC to assemble under 6502 simulator, $ver 2.22p2
 
 ; $E7E1 $E7CF $E7C6 $E7D3 $E7D1 $E7D5 $E7CF $E81E $E825
 
@@ -20,6 +20,8 @@
 ; 2.22p     patched to disable use of decimal mode and fix Ibuff issues
 ;              (bugsnquirks.txt notes 2, 4 and 5)
 ;              tabs converted to spaces, tabwidth=6
+; 2.22p2    fixed can't continue error on 1st statement after direct mode
+;              changed INPUT to throw "break in line ##" on empty line input
 
 ; zero page use ..
 
@@ -1286,7 +1288,8 @@ LAB_1491
       LDX   #$FD              ; new stack pointer
       TXS                     ; reset stack
       LDA   #$00              ; clear byte
-      STA   Cpntrh            ; clear continue pointer high byte
+;*** fix p2: no longer necessary as the continue pointer is saved anyway
+;      STA   Cpntrh            ; clear continue pointer high byte
       STA   Sufnxf            ; clear subscript/FNX flag
 LAB_14A6
       RTS
@@ -1518,7 +1521,8 @@ LAB_15C2
       LDX   Clineh            ; continue line is $FFxx for immediate mode
                               ; ($00xx for RUN from immediate mode)
       INX                     ; increment it (now $00 if immediate mode)
-      BEQ   LAB_15D1          ; branch if null (immediate mode)
+;*** fix p2: skip no longer necessary as the continue pointer is saved anyway
+;      BEQ   LAB_15D1          ; branch if null (immediate mode)
 
       STA   Cpntrl            ; save continue pointer low byte
       STY   Cpntrh            ; save continue pointer high byte
@@ -1609,12 +1613,12 @@ LAB_163B
       BNE   LAB_167A          ; if wasn't CTRL-C or there is a following byte return
 
       LDA   Bpntrh            ; get the BASIC execute pointer high byte
-      EOR   #>Ibuffs          ; compare with buffer address high byte (Cb unchanged)
-      BEQ   LAB_164F          ; branch if the BASIC pointer is in the input buffer
-                              ; (can't continue in immediate mode)
-
-                              ; else ..
-      EOR   #>Ibuffs          ; correct the bits
+;*** fix p2: skip no longer necessary as the continue pointer is saved anyway
+;      EOR   #>Ibuffs          ; compare with buffer address high byte (Cb unchanged)
+;      BEQ   LAB_164F          ; branch if the BASIC pointer is in the input buffer
+;                              ; (can't continue in immediate mode)
+;                              ; else ..
+;      EOR   #>Ibuffs          ; correct the bits
       LDY   Bpntrl            ; get BASIC execute pointer low byte
       STY   Cpntrl            ; save continue pointer low byte
       STA   Cpntrh            ; save continue pointer high byte
@@ -1713,6 +1717,7 @@ LAB_CONT
       BNE   LAB_167A          ; if following byte exit to do syntax error
 
       LDY   Cpntrh            ; get continue pointer high byte
+      CPY   #>Ibuffs          ; *** fix p2: test direct mode
       BNE   LAB_166C          ; go do continue if we can
 
       LDX   #$1E              ; error code $1E ("Can't continue" error)
@@ -2591,7 +2596,8 @@ LAB_1934
       CMP   Ibuffs            ; test first byte in buffer
       BNE   LAB_1953          ; branch if not null input
 
-      CLC                     ; was null input so clear carry to exit program
+; *** change p2: keep carry set to throw break message
+;      CLC                     ; was null input so clear carry to exit program
       JMP   LAB_1647          ; go do BREAK exit
 
 ; perform READ
@@ -7832,7 +7838,7 @@ LAB_MSZM
 
 LAB_SMSG
       .byte " Bytes free",$0D,$0A,$0A
-      .byte "Enhanced BASIC 2.22p",$0A,$00
+      .byte "Enhanced BASIC 2.22p2",$0A,$00
 
 ; numeric constants and series
 

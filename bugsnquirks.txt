@@ -175,3 +175,19 @@ We need to replace it like below:
 Ibuffs            = VEC_SV+$16
                               ; start of input buffer after IRQ/NMI code
 Ibuffe            = Ibuffs+$47; end of input buffer
+
+
+6. First statement after direct mode does not set the continue pointer
+
+After a RUN or GOTO in direct mode CONT does not work for the first statement in
+run mode. It throws a "Can't continue error". If that first statement is INPUT
+then "Redo from start" causes a subsequent syntax error.
+
+It is actually a hen and egg problem as the continue pointer (Cpntrh/l) is saved
+during the inner loop if not in direct mode, but direct mode (Clineh = $FF) is
+only cleared later in the same loop.
+
+The fix is in the patched folder (version 2.22p2). The continue counter is now
+always saved and the decission to continue is postponed until the CONT statement
+is executed and based on the fact that the continue pointer must not point to
+the input buffer in run mode.

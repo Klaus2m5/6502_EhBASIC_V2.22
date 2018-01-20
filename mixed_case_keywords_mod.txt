@@ -1,7 +1,7 @@
 Tokenizer mixed case keyword recognition
 
-This modification is based on a patch by user ArnoldLayne of the 6502.org
-forum: http://forum.6502.org/viewtopic.php?f=5&t=4383
+This modification is based on a patch by user ArnoldLayne and jbevren of the
+6502.org forum: http://forum.6502.org/viewtopic.php?f=5&t=4383
 
 In EhBasic keywords must be upper case. This may be inconvenient on computers
 with mixed case support. The modification below changes the tokenizer to match
@@ -25,7 +25,7 @@ LAB_13AC
       LDA   Ibuffs,X          ; get byte from input buffer
       BEQ   LAB_13EC          ; if null save byte then exit
 
-; *** begin patch: lower case token recognition ***
+; *** begin patch: lower case token recognition V2 ***
 ; ***              WARNING! changes documented behavior!
 ; *** add
       CMP   #'{'              ; convert lower to upper case
@@ -103,14 +103,13 @@ LAB_13D8
       BMI   LAB_13EA          ; all bytes matched so go save token
 
       INX                     ; next buffer byte
-      CMP   Ibuffs,X          ; compare with byte from input buffer
+; *** replace
+;      CMP   Ibuffs,X          ; compare with byte from input buffer
+; *** with
+      EOR     Ibuffs,x        ; check bits against table
+      AND     #$DF            ; DF masks the upper/lower case bit
+; *** end      
       BEQ   LAB_13D6          ; go compare next if match
-
-;*** add
-      ORA #$20                ; repeat with lower case
-      CMP Ibuffs,X            ; compare with byte from input buffer
-      BEQ LAB_13D6            ; go compare next if match
-; *** end
 
       BNE   LAB_1417          ; branch if >< (not found keyword)
 
@@ -177,7 +176,7 @@ LAB_141B
 ; *** add label
 PATCH_LC2
 ; *** end
-; *** end   patch: lower case token recognition ***
+; *** end   patch: lower case token recognition V2 ***
 
       LDA   Ibuffs,X          ; restore byte from input buffer
       BPL   LAB_13EA          ; branch always (all bytes in buffer are $00-$7F)

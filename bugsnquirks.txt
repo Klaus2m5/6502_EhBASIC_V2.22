@@ -31,6 +31,9 @@ place and only a pointer needs to be set to the string location.
 
 There is a bug in EhBASIC to determine where the string is.
 
+!! The original version of this patch broke the number to string conversion as
+in STR$(). Github user mgcaret provided a fix included in version 2 !! 
+
 LAB_20DC
       STX   Sendh             ; save string end high byte
       LDA   ssptr_h           ; get string start high byte
@@ -42,14 +45,16 @@ below RAM_base. The fix requires the input buffer not to cross a page boundary:
 LAB_20DC
       STX   Sendh             ; save string end high byte
       LDA   ssptr_h           ; get string start high byte
-; *** begin RAM above code / Ibuff above EhBASIC patch ***
+; *** begin RAM above code / Ibuff above EhBASIC patch V2 ***
 ; *** replace
 ;      CMP   #>Ram_base        ; compare with start of program memory
 ;      BCS   LAB_RTST          ; branch if not in utility area
 ; *** with
+      BEQ   LAB_MVST          ; fix STR$() using page zero via LAB_296E
       CMP   #>Ibuffs          ; compare with location of input buffer page
       BNE   LAB_RTST          ; branch if not in utility area
-; *** end   RAM above code / Ibuff above EhBASIC patch ***
+LAB_MVST
+; *** end   RAM above code / Ibuff above EhBASIC patch V2 ***
 
 
 3. Output of some functions limited to integers is negative.
@@ -163,7 +168,7 @@ LAB_142P
       DEC   Bpntrl            ; allow for increment
       RTS
 
-The conditional in the patch abover requires Ibuffs to be known at path 1 during
+The conditional in the patch above requires Ibuffs to be known at pass 1 during
 assembly. The standard definition of Ibuffs does not satisfy this requirement.
 We need to replace it like below:
 
@@ -188,6 +193,6 @@ during the inner loop if not in direct mode, but direct mode (Clineh = $FF) is
 only cleared later in the same loop.
 
 The fix is in the patched folder (version 2.22p2). The continue counter is now
-always saved and the decission to continue is postponed until the CONT statement
+always saved and the decision to continue is postponed until the CONT statement
 is executed and based on the fact that the continue pointer must not point to
 the input buffer in run mode.

@@ -22,6 +22,8 @@
 ;              tabs converted to spaces, tabwidth=6
 ; 2.22p2    fixed can't continue error on 1st statement after direct mode
 ;              changed INPUT to throw "break in line ##" on empty line input
+; 2.22p3    fixed RAM above code / Ibuff above EhBASIC patch breaks STR$()
+;              fix provided by github user mgcaret
 
 ; zero page use ..
 
@@ -4412,14 +4414,16 @@ LAB_20D0
 LAB_20DC
       STX   Sendh             ; save string end high byte
       LDA   ssptr_h           ; get string start high byte
-; *** begin RAM above code / Ibuff above EhBASIC patch ***
+; *** begin RAM above code / Ibuff above EhBASIC patch V2 ***
 ; *** replace
 ;      CMP   #>Ram_base        ; compare with start of program memory
 ;      BCS   LAB_RTST          ; branch if not in utility area
 ; *** with
+      BEQ   LAB_MVST          ; fix STR$() using page zero via LAB_296E
       CMP   #>Ibuffs          ; compare with location of input buffer page
       BNE   LAB_RTST          ; branch if not in utility area
-; *** end   RAM above code / Ibuff above EhBASIC patch ***
+LAB_MVST      
+; *** end   RAM above code / Ibuff above EhBASIC patch V2 ***
 
                               ; string in utility area, move to string memory
       TYA                     ; copy length to A

@@ -1,5 +1,5 @@
 
-; Enhanced BASIC to assemble under 6502 simulator, $ver 2.22p2
+; Enhanced BASIC to assemble under 6502 simulator, $ver 2.22p3
 
 ; $E7E1 $E7CF $E7C6 $E7D3 $E7D1 $E7D5 $E7CF $E81E $E825
 
@@ -7842,7 +7842,7 @@ LAB_MSZM
 
 LAB_SMSG
       .byte " Bytes free",$0D,$0A,$0A
-      .byte "Enhanced BASIC 2.22p2",$0A,$00
+      .byte "Enhanced BASIC 2.22p3",$0A,$00
 
 ; numeric constants and series
 

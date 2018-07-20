@@ -1,5 +1,5 @@
 
-; Enhanced BASIC to assemble under 6502 simulator, $ver 2.22p3
+; Enhanced BASIC to assemble under 6502 simulator, $ver 2.22p4
 
 ; $E7E1 $E7CF $E7C6 $E7D3 $E7D1 $E7D5 $E7CF $E81E $E825
 
@@ -24,9 +24,15 @@
 ;              changed INPUT to throw "break in line ##" on empty line input
 ; 2.22p3    fixed RAM above code / Ibuff above EhBASIC patch breaks STR$()
 ;              fix provided by github user mgcaret
+; 2.22p4    fixed string compare of equal strings in direct mode returns FALSE
+;              fixed FALSE stored to a variable after a string compare 
+;                 is > 0 and < 1E-16
+;              added additional stack floor protection for background interrupts
+;              fixed conditional LOOP & NEXT cannot find their data strucure on stack
 
 ; zero page use ..
 
+; the following locations are bulk initialized from StrTab at LAB_GMEM
 LAB_WARM          = $00       ; BASIC warm start entry point
 Wrmjpl            = LAB_WARM+1; BASIC warm start vector jump low byte
 Wrmjph            = LAB_WARM+2; BASIC warm start vector jump high byte
@@ -40,6 +46,7 @@ TWidth            = $0F       ; BASIC terminal width byte
 Iclim             = $10       ; input column limit
 Itempl            = $11       ; temporary integer low byte
 Itemph            = Itempl+1  ; temporary integer high byte
+; end bulk initialize from StrTab at LAB_GMEM
 
 nums_1            = Itempl    ; number to bin/hex string convert MSB
 nums_2            = nums_1+1  ; number to bin/hex string convert
@@ -248,6 +255,7 @@ Cptrh             = Aspth     ; BASIC pointer temp low byte
 Sendl             = Asptl     ; BASIC pointer temp low byte
 Sendh             = Aspth     ; BASIC pointer temp low byte
 
+; the following locations are bulk initialized from LAB_2CEE at LAB_2D4E
 LAB_IGBY          = $BC       ; get next BASIC byte subroutine
 
 LAB_GBYT          = $C2       ; get current BASIC byte subroutine
@@ -255,6 +263,7 @@ Bpntrl            = $C3       ; BASIC execute (get byte) pointer low byte
 Bpntrh            = Bpntrl+1  ; BASIC execute (get byte) pointer high byte
 
 ;                 = $D7       ; end of get BASIC char subroutine
+; end bulk initialize from LAB_2CEE at LAB_2D4E
 
 Rbyte4            = $D8       ; extra PRNG byte
 Rbyte1            = Rbyte4+1  ; most significant PRNG byte
@@ -273,10 +282,8 @@ IrqBase           = $DF       ; IRQ handler enabled/setup/triggered flags
 ;                 = $E0       ; IRQ handler addr low byte
 ;                 = $E1       ; IRQ handler addr high byte
 
-;                 = $DE       ; unused
-;                 = $DF       ; unused
-;                 = $E0       ; unused
-;                 = $E1       ; unused
+; *** removed unused comments for $DE-$E1
+
 ;                 = $E2       ; unused
 ;                 = $E3       ; unused
 ;                 = $E4       ; unused
@@ -426,16 +433,20 @@ LAB_SKFE          = LAB_STAK+$FE
 LAB_SKFF          = LAB_STAK+$FF
                               ; flushed stack address
 
+; the following locations are bulk initialized from PG2_TABS at LAB_COLD
 ccflag            = $0200     ; BASIC CTRL-C flag, 00 = enabled, 01 = dis
 ccbyte            = ccflag+1  ; BASIC CTRL-C byte
 ccnull            = ccbyte+1  ; BASIC CTRL-C byte timeout
 
 VEC_CC            = ccnull+1  ; ctrl c check vector
+; end bulk initialize from PG2_TABS at LAB_COLD
 
+; the following locations are bulk initialized by min_mon.asm from LAB_vec at LAB_stlp
 VEC_IN            = VEC_CC+2  ; input vector
 VEC_OUT           = VEC_IN+2  ; output vector
 VEC_LD            = VEC_OUT+2 ; load vector
 VEC_SV            = VEC_LD+2  ; save vector
+; end bulk initialize by min_mon.asm from LAB_vec at LAB_stlp
 
 ; Ibuffs can now be anywhere in RAM, ensure that the max length is < $80,
 ; the input buffer must not cross a page boundary and must not overlap with
@@ -448,6 +459,8 @@ Ibuffe            = Ibuffs+$47; end of input buffer
 
 Ram_base          = $0300     ; start of user RAM (set as needed, should be page aligned)
 Ram_top           = $C000     ; end of user RAM+1 (set as needed, should be page aligned)
+
+Stack_floor       = 16        ; bytes left free on stack for background interrupts
 
 ; This start can be changed to suit your system
 
@@ -473,7 +486,7 @@ LAB_2D13
       LDA   #$4C              ; code for JMP
       STA   Fnxjmp            ; save for jump vector for functions
 
-; copy block from LAB_2CEE to $00BC - $00D3
+; copy block from LAB_2CEE to $00BC - $00D7
 
       LDX   #StrTab-LAB_2CEE  ; set byte count
 LAB_2D4E
@@ -695,6 +708,13 @@ LAB_120A
 ; stack too deep? do OM error
 
 LAB_1212
+; *** patch - additional stack floor protection for background interrupts
+; *** add
+      .IF   Stack_floor
+      CLC                     ; prep ADC
+      ADC   #Stack_floor      ; stack pointer lower limit before interrupts
+      .ENDIF
+; *** end patch
       STA   TempB             ; save result in temp byte
       TSX                     ; copy stack
       CPX   TempB             ; compare new "limit" with stack
@@ -2021,14 +2041,35 @@ LAB_174C
 
                               ; is var or keyword
 LAB_174D
-      CMP   #TK_RETURN        ; compare the byte with the token for RETURN
-      BNE   LAB_174G          ; if it wasn't RETURN go interpret BASIC code from (Bpntrl)
-                              ; and return to this code to process any following code
-
-      JMP   LAB_1602          ; else it was RETURN so interpret BASIC code from (Bpntrl)
-                              ; but don't return here
-
-LAB_174G
+; *** patch       allow NEXT, LOOP & RETURN to find FOR, DO or GOSUB structure on stack
+; *** replace
+;      CMP   #TK_RETURN        ; compare the byte with the token for RETURN
+;      BNE   LAB_174G          ; if it wasn't RETURN go interpret BASIC code from (Bpntrl)
+;                              ; and return to this code to process any following code
+;
+;      JMP   LAB_1602          ; else it was RETURN so interpret BASIC code from (Bpntrl)
+;                              ; but don't return here
+;
+;LAB_174G
+;      JSR   LAB_15FF          ; interpret BASIC code from (Bpntrl)
+;
+;; the IF was executed and there may be a following ELSE so the code needs to return
+;; here to check and ignore the ELSE if present
+;
+;      LDY   #$00              ; clear the index
+;      LDA   (Bpntrl),Y        ; get the next BASIC byte
+;      CMP   #TK_ELSE          ; compare it with the token for ELSE
+;      BEQ   LAB_DATA          ; if ELSE ignore the following statement
+;
+;; there was no ELSE so continue execution of IF <expr> THEN <stat> [: <stat>]. any
+;; following ELSE will, correctly, cause a syntax error
+;
+;      RTS                     ; else return to the interpreter inner loop
+;
+; *** with
+      PLA                     ; discard interpreter loop return address
+      PLA                     ; so data structures are at the correct stack offset
+      JSR   LAB_GBYT          ; restore token or variable
       JSR   LAB_15FF          ; interpret BASIC code from (Bpntrl)
 
 ; the IF was executed and there may be a following ELSE so the code needs to return
@@ -2037,12 +2078,15 @@ LAB_174G
       LDY   #$00              ; clear the index
       LDA   (Bpntrl),Y        ; get the next BASIC byte
       CMP   #TK_ELSE          ; compare it with the token for ELSE
-      BEQ   LAB_DATA          ; if ELSE ignore the following statement
+      BNE   LAB_no_ELSE       ; no - continue on this line
+      JSR   LAB_DATA          ; yes - skip the rest of the line
 
 ; there was no ELSE so continue execution of IF <expr> THEN <stat> [: <stat>]. any
 ; following ELSE will, correctly, cause a syntax error
 
-      RTS                     ; else return to the interpreter inner loop
+LAB_no_ELSE
+      JMP LAB_15C2            ; return to the interpreter inner loop
+; *** end patch  allow NEXT, LOOP & RETURN to find FOR, DO or GOSUB structure on stack
 
 ; perform ELSE after IF
 
@@ -2239,8 +2283,15 @@ LAB_LET
       JSR   LAB_EVEX          ; evaluate expression
       PLA                     ; pop data type flag
       ROL                     ; set carry if type = string
-      JSR   LAB_CKTM          ; type match check, set C for string
-      BNE   LAB_17D5          ; branch if string
+; *** begin patch  result of a string compare stores string pointer to variable
+;                  but should store FAC1 (true/false value)
+; *** replace
+;      JSR   LAB_CKTM          ; type match check, set C for string
+;      BNE   LAB_17D5          ; branch if string
+; *** with
+      JSR   LAB_CKTM          ; type match check, keep C (expected type)
+      BCS   LAB_17D5          ; branch if string
+; *** end patch
 
       JMP   LAB_PFAC          ; pack FAC1 into variable (Lvarpl) and return
 
@@ -3259,6 +3310,10 @@ LAB_1C24
       JMP   LAB_UFAC          ; unpack memory (AY) into FAC1
 
 LAB_1C25
+; *** begin patch  string pointer high byte trashed when moved to stack
+; *** add
+      LSR   FAC1_r            ; clear bit 7 (<$80) = do not round up
+; *** end patch 
       RTS
 
 ; get value from line .. continued
@@ -7842,7 +7897,7 @@ LAB_MSZM
 
 LAB_SMSG
       .byte " Bytes free",$0D,$0A,$0A
-      .byte "Enhanced BASIC 2.22p3",$0A,$00
+      .byte "Enhanced BASIC 2.22p4",$0A,$00
 
 ; numeric constants and series
 

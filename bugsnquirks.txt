@@ -414,3 +414,19 @@ LAB_174D
 LAB_no_ELSE
       JMP LAB_15C2            ; return to the interpreter inner loop
 ; *** end patch  allow NEXT, LOOP & RETURN to find FOR, DO or GOSUB structure on stack
+
+
+11. Additional bugs brought up by users Ruud and dclxvi of the 6502.org forum
+
+See http://forum.6502.org/viewtopic.php?f=5&t=5500
+       sanity check for RAM top allows values below RAM base
+    http://forum.6502.org/viewtopic.php?f=5&t=5606
+       #1 TO expression with a subtract may evaluate with the sign bit flipped
+       #3 call to LAB_1B5B may return to an address -$100 (page not incremented)
+       #4 string concatenate followed by MINUS or NOT() crashes EhBASIC
+       #5 garbage collection may cause an overlap with temporary strings
+       #6 floating point multiply rounding bug
+       #7 VAL() may cause string variables to be trashed
+    All above have been fixed in 2.22p5. See the thread for additional quirks.
+
+

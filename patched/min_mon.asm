@@ -131,3 +131,6 @@ LAB_mess
       .word NMI_vec           ; NMI vector
       .word RES_vec           ; RESET vector
       .word IRQ_vec           ; IRQ vector
+
+      .end RES_vec            ; set start at reset vector
+      
